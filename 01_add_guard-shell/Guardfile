@@ -1,0 +1,66 @@
+require 'guard/compat/plugin'
+require 'systemu'
+
+# Guard起動後のインタラクションを無効化(誤動作防止のため)
+interactor :off
+
+# アプリケーションのプロセス操作用クラス
+class App
+  attr_reader :name
+  def initialize(name)
+    @name = name
+  end
+
+  def start
+    execute_command("bundle exec ./exe/app")
+  end
+
+  def stop
+    execute_command("pkill -SIGKILL -f './exe/app'")
+  end
+
+  def restart
+    stop
+    start
+  end
+
+  def running?
+    command = ("ps aux | grep './exe/app' | grep -qv grep")
+    status, stdout, stderr = systemu(command)
+    status.success?
+  end
+
+  private
+
+  def execute_command(command)
+    status, stdout, stderr = systemu(command)
+    unless status.success?
+      Guard::Compat::UI.error("command execute error")
+      Guard::Compat::UI.error(stderr)
+    end
+  end
+end
+
+
+# service
+app = App.new('MyServer')
+guard :shell do
+  callback(:start_begin) do
+
+    if app.running?
+      app.stop
+    end
+    app.start
+
+    Guard::Compat::UI.info("#{app.name} started.")
+  end
+  callback(:stop_end) do
+    app.stop
+    Guard::Compat::UI.info("#{app.name} stopped.")
+  end
+
+  watch(%r{^lib/(.+)\.(rb|yml)}) do |m|
+    app.restart
+    Guard::Compat::UI.info("#{app.name} restarted.")
+  end
+end
